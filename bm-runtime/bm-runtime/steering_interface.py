@@ -50,6 +50,23 @@ def writeShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, port, dstAddr)
     sw_id.WriteTableEntry(table_entry)
     print "Installed shadow rule on %s" % sw_id.name
 
+def updateShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, port, dstAddr): 
+    table_entry = p4info_helper.buildTableEntry(
+        table_name="MyIngress.shadow",
+        match_fields={
+            "hdr.ipv4.dstAddr": (dst_ip_addr, 32)
+        },
+        action_name="MyIngress.catalogue",
+        action_params={
+            "nf1": nf1,
+            "nf2": nf2,
+            "nf3": nf3,
+            "port": port,
+            "dstAddr": dstAddr
+        })
+    sw_id.UpdateTableEntry(table_entry)
+    print "Installed shadow rule on %s" % sw_id.name
+
 
 #def write_end_to_end(p4info_helper, path):
 
@@ -113,10 +130,10 @@ def printCounter(p4info_helper, sw, counter_name, index, file):
     for response in sw.ReadCounters(p4info_helper.get_counters_id(counter_name), index):
         for entity in response.entities:
             counter = entity.counter_entry
-            print "%s %s %d: %d packets (%d bytes)" % (
-                sw.name, counter_name, index,
-                counter.data.packet_count, counter.data.byte_count
-            )
+            #print "%s %s %d: %d packets (%d bytes)" % (
+            #    sw.name, counter_name, index,
+            #    counter.data.packet_count, counter.data.byte_count
+            #)
             file.write(',' + str(counter.data.byte_count))
             file.flush()
             #print(str(sw.name) + ',' + str(index) + ',' + str(counter.data.byte_count))
@@ -205,7 +222,10 @@ def main(p4info_file_path, bmv2_file_path):
 
         while True:
             value = input('teste:')
-            print value  
+            writeShadow(p4info_helper, sw_id=s3, dst_ip_addr="10.0.3.3", nf1=1, nf2=1, nf3=0, port=1, dstAddr="00:00:00:00:03:03")
+            updateShadow(p4info_helper, sw_id=s1, dst_ip_addr="10.0.3.3", nf1=1, nf2=1, nf3=0, port=4, dstAddr="00:00:00:00:03:03")
+
+            print (init_time - time.time())  
 
         print " Shutting down."
     except grpc.RpcError as e:
