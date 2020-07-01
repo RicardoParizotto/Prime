@@ -117,7 +117,7 @@ def printCounter(p4info_helper, sw, counter_name, index, file):
                 sw.name, counter_name, index,
                 counter.data.packet_count, counter.data.byte_count
             )
-            file.write(str(sw.name) + "_" + str(index) + ',' + str(counter.data.byte_count) + ',' + str(time.time() - init_time)+  '\n')
+            file.write(',' + str(sw.name) + "_" + str(index) + ',' + str(counter.data.byte_count))
             file.flush()
             #print(str(sw.name) + ',' + str(index) + ',' + str(counter.data.byte_count))
 
@@ -126,6 +126,7 @@ def storeTimestamps(p4info_helper, s1, s2, s3):
 
     while True:
         sleep(2)
+        f.write(str(time.time() - init_time))
         printCounter(p4info_helper, s1, "MyIngress.programProcessingCounter", 1, file=f)
         printCounter(p4info_helper, s1, "MyIngress.programProcessingCounter", 2, file=f)
         printCounter(p4info_helper, s1, "MyIngress.programProcessingCounter", 3, file=f)
@@ -135,7 +136,7 @@ def storeTimestamps(p4info_helper, s1, s2, s3):
         printCounter(p4info_helper, s3, "MyIngress.programProcessingCounter", 1, file=f)
         printCounter(p4info_helper, s3, "MyIngress.programProcessingCounter", 2, file=f)
         printCounter(p4info_helper, s3, "MyIngress.programProcessingCounter", 3, file=f)
-
+        f.write('\n')
 
 
 def printGrpcError(e):
