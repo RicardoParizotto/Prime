@@ -17,6 +17,9 @@ struct custom_metadata_t {
     bit<8>                 nf_01_id;
     bit<8>                 nf_02_id; 
     bit<8>                 nf_03_id;
+    bit<32>                rounds;
+    bit<8>                 next_function; 
+    bit<32>                total_rounds;
     bit<9>                port;
 }
 
@@ -48,6 +51,7 @@ struct metadata {
     egressSpec_t               		      port_aux;
     bit<64>                               aux_ingress_metadata;
     bit<64>                               aux_swap;
+    bit<32> 							  mark_as_processed;
 }
 
 struct headers {
@@ -108,10 +112,19 @@ control MyIngress(inout headers hdr,
         mark_to_drop(standard_metadata);
     }
     
-    action catalogue( bit<8> nf1, bit<8> nf2, bit<8> nf3, egressSpec_t port, macAddr_t dstAddr) {
+    /*
+    action ipv4_forward(macAddr_t dstAddr, egressSpec_t port) {
+        standard_metadata.egress_spec = port;
+        hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
+        hdr.ethernet.dstAddr = dstAddr;
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
+    }*/
+
+    action catalogue( bit<8> nf1, bit<8> nf2, bit<8> nf3, bit<32> ttl_rounds, egressSpec_t port, macAddr_t dstAddr) {
         meta.custom_metadata.nf_01_id  =  nf1;
         meta.custom_metadata.nf_02_id  =  nf2;
         meta.custom_metadata.nf_03_id  =  nf3;                   
+        meta.custom_metadata.total_rounds = ttl_rounds;
         meta.custom_metadata.port = port;
         standard_metadata.egress_spec = port;
         hdr.ethernet.srcAddr = hdr.ethernet.dstAddr;
@@ -130,22 +143,27 @@ control MyIngress(inout headers hdr,
 
     apply {
 
-	shadow.apply();
-
-        meta.aux_ingress_metadata = ( bit<64> ) standard_metadata.ingress_global_timestamp;
-        packet_count.read(meta.aux_swap,0);
-        packet_count.write(0, meta.aux_swap + 1);
+    	if (meta.custom_metadata.rounds == 0){
+    	    shadow.apply();
+            meta.custom_metadata.next_function = meta.custom_metadata.nf_01_id;
+            meta.custom_metadata.rounds = meta.custom_metadata.rounds + 1;
+            meta.aux_ingress_metadata = ( bit<64> ) standard_metadata.ingress_global_timestamp;
+            packet_count.read(meta.aux_swap,0);
+	    	packet_count.write(0, meta.aux_swap + 1);
+    	}
 
 	    //if the next function to be processed is the function with ID=1
-	    if (meta.custom_metadata.nf_01_id == 1){
-           programProcessingCounter.count((bit<32>)1);
+	    if (meta.custom_metadata.next_function == 1){
+	   		//Function_1
         }
-        if (meta.custom_metadata.nf_02_id == 1){
-           programProcessingCounter.count((bit<32>)2);
+        if (meta.custom_metadata.next_function == 2){
+    	    //Function_2
         }
-        if (meta.custom_metadata.nf_03_id == 1){
-           programProcessingCounter.count((bit<32>)3);
+        if (meta.custom_metadata.next_function == 3){
+    	    //Function_3
         }
+
+        programProcessingCounter.count((bit<32>)meta.custom_metadata.next_function);
     }
 }
 
@@ -158,18 +176,42 @@ control MyEgress(inout headers hdr,
                  inout standard_metadata_t standard_metadata) {
 
     apply {
-	    if (meta.custom_metadata.nf_01_id == 1){
-	        //Function_1
+	    if (meta.custom_metadata.next_function == 1){
+	   		//Function_1
         }
-        if (meta.custom_metadata.nf_02_id == 1){
+        if (meta.custom_metadata.next_function == 2){
     	    //Function_2    	
         }
-        if (meta.custom_metadata.nf_03_id == 1){
+        if (meta.custom_metadata.next_function == 3){
     	    //Function_3  
         }
 
-       timestamps_bank.read(meta.aux_swap,0);
-       timestamps_bank.write(0, meta.aux_swap + (( bit<64>) standard_metadata.egress_global_timestamp - meta.aux_ingress_metadata));
+        
+	    //set next function------------------------------------------------------
+	    //------------------- DO IT FOR N FUNCTIONS -----------------------------
+	 	//----  if these switch have processed the required program  ------------
+
+        if(meta.custom_metadata.rounds < meta.custom_metadata.total_rounds){
+            
+            meta.custom_metadata.rounds = meta.custom_metadata.rounds + 1;
+            if(meta.custom_metadata.rounds == 1)
+                meta.custom_metadata.next_function = meta.custom_metadata.nf_01_id;
+            else if(meta.custom_metadata.rounds == 2)
+                meta.custom_metadata.next_function = meta.custom_metadata.nf_02_id;
+	        else if(meta.custom_metadata.rounds == 3)
+                meta.custom_metadata.next_function = meta.custom_metadata.nf_03_id;
+
+
+ 			//save essential content before recirculating 
+	        meta.port_aux = standard_metadata.egress_spec;
+    	    recirculate(meta);
+	    }else{
+	        //collecting timestamps for analysis purposes
+            timestamps_bank.read(meta.aux_swap,0);
+            timestamps_bank.write(0, meta.aux_swap + (( bit<64>) standard_metadata.egress_global_timestamp - meta.aux_ingress_metadata));
+            standard_metadata.egress_spec = meta.port_aux;
+        }
+        standard_metadata.egress_spec = meta.custom_metadata.port;
     }
 }
 
