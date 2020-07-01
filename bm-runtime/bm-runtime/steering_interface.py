@@ -3,6 +3,8 @@ import argparse
 import grpc
 import os
 import sys
+import threading
+import time
 from time import sleep
 
 # Import P4Runtime lib from parent utils dir
@@ -16,7 +18,22 @@ from p4runtime_lib.switch import ShutdownAllSwitchConnections
 import p4runtime_lib.helper
 
 
-def writeShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, nf4, nf5, ttl_rounds): 
+
+init_time = time.time()
+
+# TODO: interface para realizar a transicao
+# colocar contadores para cada programa
+# fazer um pulling dos contadores e dar um jeito de salvar eles
+#  
+
+paths_1 =  {"10.0.0.3": {"s1":[1,2,3], "s3":[1,2]}, 
+          "10.0.1.1":{"s2":[2,1], "s3":[1,3]}} 
+
+path_2 = {"10.0.0.3": [{"s1": [1,3,2]}, {"s2":[1,2]}]}
+
+#path = {flow: sw_config[]}
+
+def writeShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, port, dstAddr): 
     table_entry = p4info_helper.buildTableEntry(
         table_name="MyIngress.shadow",
         match_fields={
@@ -27,16 +44,17 @@ def writeShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, nf4, nf5, ttl_
             "nf1": nf1,
             "nf2": nf2,
             "nf3": nf3,
-            "nf4": nf4,
-            "nf5": nf5,
-            "ttl_rounds": ttl_rounds
+            "port": port,
+            "dstAddr": dstAddr
         })
     sw_id.WriteTableEntry(table_entry)
     print "Installed shadow rule on %s" % sw_id.name
 
 
+#def write_end_to_end(p4info_helper, path):
 
-def writeEth(p4info_helper, sw_id, dst_ip_addr, src_eth_addr, port):a
+
+def writeEth(p4info_helper, sw_id, dst_ip_addr, src_eth_addr, port):
 
     table_entry = p4info_helper.buildTableEntry(
         table_name="MyIngress.ipv4_lpm",
@@ -78,7 +96,10 @@ def readTableRules(p4info_helper, sw):
                 print '%r' % p.value,
             print
 
-def printCounter(p4info_helper, sw, counter_name, index):
+
+
+
+def printCounter(p4info_helper, sw, counter_name, index, file):
     """
     Reads the specified counter at the specified index from the switch. In our
     program, the index is the tunnel ID. If the index is 0, it will return all
@@ -96,6 +117,26 @@ def printCounter(p4info_helper, sw, counter_name, index):
                 sw.name, counter_name, index,
                 counter.data.packet_count, counter.data.byte_count
             )
+            file.write(str(sw.name) + ',' + str(index) + ',' + str(counter.data.byte_count) + ',' + str(time.time() - init_time)+  '\n')
+            file.flush()
+            #print(str(sw.name) + ',' + str(index) + ',' + str(counter.data.byte_count))
+
+def storeTimestamps(p4info_helper, s1, s2, s3):
+    f = open('filename.txt', "w+")
+
+    while True:
+        sleep(2)
+        printCounter(p4info_helper, s1, "MyIngress.programProcessingCounter", 1, file=f)
+        printCounter(p4info_helper, s1, "MyIngress.programProcessingCounter", 2, file=f)
+        printCounter(p4info_helper, s1, "MyIngress.programProcessingCounter", 3, file=f)
+        printCounter(p4info_helper, s2, "MyIngress.programProcessingCounter", 1, file=f)
+        printCounter(p4info_helper, s2, "MyIngress.programProcessingCounter", 2, file=f)
+        printCounter(p4info_helper, s2, "MyIngress.programProcessingCounter", 3, file=f)
+        printCounter(p4info_helper, s3, "MyIngress.programProcessingCounter", 1, file=f)
+        printCounter(p4info_helper, s3, "MyIngress.programProcessingCounter", 2, file=f)
+        printCounter(p4info_helper, s3, "MyIngress.programProcessingCounter", 3, file=f)
+
+
 
 def printGrpcError(e):
     print "gRPC Error:", e.details(),
@@ -117,37 +158,53 @@ def main(p4info_file_path, bmv2_file_path):
             address='127.0.0.1:50051',
             device_id=0,
             proto_dump_file='logs/s1-p4runtime-requests.txt')
+        s2 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+            name='s2',
+            address='127.0.0.1:50052',
+            device_id=1,
+            proto_dump_file='logs/s2-p4runtime-requests.txt')
+        s3 = p4runtime_lib.bmv2.Bmv2SwitchConnection(
+            name='s3',
+            address='127.0.0.1:50053',
+            device_id=2,
+            proto_dump_file='logs/s3-p4runtime-requests.txt')
+
+
 
         # Send master arbitration update message to establish this controller as
         # master (required by P4Runtime before performing any other write operation)
         s1.MasterArbitrationUpdate()
+        s2.MasterArbitrationUpdate()
+        s3.MasterArbitrationUpdate()            
 
         # Install the P4 program on the switches
         s1.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
                                        bmv2_json_file_path=bmv2_file_path)
         print "Installed P4 Program using SetForwardingPipelineConfig on s1"
 
-        
-        
-        for i in range(1, 200):
-            writeShadow(p4info_helper, sw_id=s1, dst_ip_addr="10.0." + str(i) + ".3", nf1=1, nf2=2, nf3=3, nf4=4, nf5=5, ttl_rounds=6)
-      
-        '''
-        for i in range(1,255):
-            for j in range(1, 255):
-                writeShadow(p4info_helper, sw_id=s1, dst_ip_addr="10." + str(j) + "." + str(i) + ".3", catalogue=1)
-        '''
+        s2.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
+                                       bmv2_json_file_path=bmv2_file_path)
+        print "Installed P4 Program using SetForwardingPipelineConfig on s2"
 
-        '''
-        #this installs 2-20 rules
-        for k in range(1, 16):
-            for i in range(1,255):
-                for j in range(1, 255):
-                    writeShadow(p4info_helper, sw_id=s1, dst_ip_addr= str(k) + "." + str(j) + "." + str(i) + ".3", catalogue=1)
-        '''
+        s3.SetForwardingPipelineConfig(p4info=p4info_helper.p4info,
+                                       bmv2_json_file_path=bmv2_file_path)
+        print "Installed P4 Program using SetForwardingPipelineConfig on s3"    
 
-        writeEth(p4info_helper, sw_id=s1, dst_ip_addr="10.0.2.2", src_eth_addr="00:00:00:00:02:02" , port=2)
-        writeEth(p4info_helper, sw_id=s1, dst_ip_addr="10.0.1.1", src_eth_addr="00:00:00:00:01:01" , port=1)
+
+        x = threading.Thread(target=storeTimestamps, args=(p4info_helper, s1, s2, s3))
+        x.start()
+        
+        #for i in range(1, 200):
+        #    writeShadow(p4info_helper, sw_id=s1, dst_ip_addr="10.0." + str(i) + ".3", nf1=1, nf2=2, nf3=3, ttl_rounds=3, port=3)
+        writeShadow(p4info_helper, sw_id=s1, dst_ip_addr="10.0.3.3", nf1=1, nf2=0, nf3=1, port=3, dstAddr="00:00:00:00:03:03")
+        writeShadow(p4info_helper, sw_id=s2, dst_ip_addr="10.0.3.3", nf1=0, nf2=1, nf3=1, port=2, dstAddr="00:00:00:00:03:03")
+
+        #writeEth(p4info_helper, sw_id=s1, dst_ip_addr="10.0.2.2", src_eth_addr="00:00:00:00:02:02" , port=2)
+        #writeEth(p4info_helper, sw_id=s1, dst_ip_addr="10.0.1.1", src_eth_addr="00:00:00:00:01:01" , port=1)
+
+        while True:
+            value = input('teste:')
+            print value  
 
         print " Shutting down."
     except grpc.RpcError as e:
