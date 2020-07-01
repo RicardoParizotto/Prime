@@ -117,7 +117,7 @@ def printCounter(p4info_helper, sw, counter_name, index, file):
                 sw.name, counter_name, index,
                 counter.data.packet_count, counter.data.byte_count
             )
-            file.write(str(counter.data.byte_count))
+            file.write(',' + str(counter.data.byte_count))
             file.flush()
             #print(str(sw.name) + ',' + str(index) + ',' + str(counter.data.byte_count))
 
