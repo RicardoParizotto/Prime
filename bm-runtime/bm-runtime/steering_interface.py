@@ -26,31 +26,23 @@ init_time = time.time()
 # fazer um pulling dos contadores e dar um jeito de salvar eles
 #  
 
+
+
 paths_1 =  {"10.0.0.3": {"s1":[1,2,3], "s3":[1,2]}, 
           "10.0.1.1":{"s2":[2,1], "s3":[1,3]}} 
 
 path_2 = {"10.0.0.3": [{"s1": [1,3,2]}, {"s2":[1,2]}]}
 
+
+control_plane_view = {}
+
 #path = {flow: sw_config[]}
 
-def writeShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, port, dstAddr): 
-    table_entry = p4info_helper.buildTableEntry(
-        table_name="MyIngress.shadow",
-        match_fields={
-            "hdr.ipv4.dstAddr": (dst_ip_addr, 32)
-        },
-        action_name="MyIngress.catalogue",
-        action_params={
-            "nf1": nf1,
-            "nf2": nf2,
-            "nf3": nf3,
-            "port": port,
-            "dstAddr": dstAddr
-        })
-    sw_id.WriteTableEntry(table_entry)
-    print "Installed shadow rule on %s" % sw_id.name
+#def manageShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, port, dstAddr):
+#   if dst_ip_addr in control_plane_view[sw_id.name] 
 
-def updateShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, port, dstAddr): 
+def writeShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, port, dstAddr): 
+
     table_entry = p4info_helper.buildTableEntry(
         table_name="MyIngress.shadow",
         match_fields={
@@ -64,13 +56,17 @@ def updateShadow(p4info_helper, sw_id, dst_ip_addr, nf1, nf2, nf3, port, dstAddr
             "port": port,
             "dstAddr": dstAddr
         })
-    sw_id.UpdateTableEntry(table_entry)
-    print "Installed shadow rule on %s" % sw_id.name
+
+    if dst_ip_addr not in control_plane_view[sw_id.name].keys():
+        sw_id.WriteTableEntry(table_entry)
+        print "Installed shadow rule on %s" % sw_id.name
+    else:
+        sw_id.UpdateTableEntry(table_entry)
+        print "Updated shadow rule on %s" % sw_id.name
+    control_plane_view[sw_id.name][dst_ip_addr] = [nf1, nf2, nf3, port, dstAddr]
 
 
 #def write_end_to_end(p4info_helper, path):
-
-
 def writeEth(p4info_helper, sw_id, dst_ip_addr, src_eth_addr, port):
 
     table_entry = p4info_helper.buildTableEntry(
@@ -86,6 +82,11 @@ def writeEth(p4info_helper, sw_id, dst_ip_addr, src_eth_addr, port):
     sw_id.WriteTableEntry(table_entry)
     print "Installed teste rule on %s" % sw_id.name
 
+#def verification(p4info_helper, sw):
+    #TODO: read table entries
+    #verify
+    #rewrite
+    #notify
 
 def readTableRules(p4info_helper, sw):
     """
@@ -93,7 +94,6 @@ def readTableRules(p4info_helper, sw):
     :param p4info_helper: the P4Info helper
     :param sw: the switch connection
     """
-
     print '\n----- Reading tables rules for %s -----' % sw.name
     for response in sw.ReadTableEntries():
         for entity in response.entities:
@@ -112,9 +112,6 @@ def readTableRules(p4info_helper, sw):
                 print p4info_helper.get_action_param_name(action_name, p.param_id),
                 print '%r' % p.value,
             print
-
-
-
 
 def printCounter(p4info_helper, sw, counter_name, index, file):
     """
@@ -187,6 +184,9 @@ def main(p4info_file_path, bmv2_file_path):
             device_id=2,
             proto_dump_file='logs/s3-p4runtime-requests.txt')
 
+        control_plane_view[s1.name] = {}
+        control_plane_view[s2.name] = {}
+        control_plane_view[s3.name] = {}
 
 
         # Send master arbitration update message to establish this controller as
@@ -223,7 +223,7 @@ def main(p4info_file_path, bmv2_file_path):
         while True:
             value = input('teste:')
             writeShadow(p4info_helper, sw_id=s3, dst_ip_addr="10.0.3.3", nf1=1, nf2=1, nf3=0, port=1, dstAddr="00:00:00:00:03:03")
-            updateShadow(p4info_helper, sw_id=s1, dst_ip_addr="10.0.3.3", nf1=1, nf2=1, nf3=0, port=4, dstAddr="00:00:00:00:03:03")
+            writeShadow(p4info_helper, sw_id=s1, dst_ip_addr="10.0.3.3", nf1=1, nf2=1, nf3=0, port=4, dstAddr="00:00:00:00:03:03")
 
             print (init_time - time.time())  
 
